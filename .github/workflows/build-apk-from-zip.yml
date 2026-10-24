@@ -1,4 +1,3 @@
-
 name: Build Daftar Al Dakkan APK
 
 on:
@@ -16,7 +15,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,11 +30,17 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Extract application
         run: |
           mkdir -p "$RUNNER_TEMP/source"
           unzip -q daftar_dakkan_standalone_apps.zip -d "$RUNNER_TEMP/source"
           test -f "$RUNNER_TEMP/source/daftar_dakkan_standalone/package.json"
+          test -f "$RUNNER_TEMP/source/daftar_dakkan_standalone/assets/icon.png"
 
       - name: Install dependencies
         working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
@@ -45,6 +49,43 @@ jobs:
       - name: Create Android project
         working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
         run: npx cap add android
+
+      - name: Apply Daftar Al Dakkan launcher icon
+        working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
+        run: |
+          python -m pip install Pillow
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          icon_path = Path("assets/icon.png")
+          if not icon_path.exists():
+              raise SystemExit("Missing assets/icon.png")
+
+          icon = Image.open(icon_path).convert("RGBA")
+          res = Path("android/app/src/main/res")
+          sizes = {
+              "mdpi": 48,
+              "hdpi": 72,
+              "xhdpi": 96,
+              "xxhdpi": 144,
+              "xxxhdpi": 192,
+          }
+          for density, size in sizes.items():
+              folder = res / f"mipmap-{density}"
+              folder.mkdir(parents=True, exist_ok=True)
+              resized = icon.resize((size, size), Image.Resampling.LANCZOS)
+              resized.save(folder / "ic_launcher.png", format="PNG", optimize=True)
+              resized.save(folder / "ic_launcher_round.png", format="PNG", optimize=True)
+
+          # Remove adaptive-icon XML so Android uses the newly generated launcher PNGs.
+          adaptive = res / "mipmap-anydpi-v26"
+          for filename in ("ic_launcher.xml", "ic_launcher_round.xml"):
+              path = adaptive / filename
+              if path.exists():
+                  path.unlink()
+          print("Launcher icons created from assets/icon.png")
+          PY
 
       - name: Sync application files
         working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
@@ -60,7 +101,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: daftar-aldakkan-apk
+          name: daftar-aldakkan-apk-with-icon
           path: ${{ runner.temp }}/source/daftar_dakkan_standalone/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
