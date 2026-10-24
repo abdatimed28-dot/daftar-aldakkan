@@ -1,0 +1,66 @@
+
+name: Build Daftar Al Dakkan APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'daftar_dakkan_standalone_apps.zip'
+      - '.github/workflows/build-apk-from-zip.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Extract application
+        run: |
+          mkdir -p "$RUNNER_TEMP/source"
+          unzip -q daftar_dakkan_standalone_apps.zip -d "$RUNNER_TEMP/source"
+          test -f "$RUNNER_TEMP/source/daftar_dakkan_standalone/package.json"
+
+      - name: Install dependencies
+        working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
+        run: npm install
+
+      - name: Create Android project
+        working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
+        run: npx cap add android
+
+      - name: Sync application files
+        working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ runner.temp }}/source/daftar_dakkan_standalone
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: daftar-aldakkan-apk
+          path: ${{ runner.temp }}/source/daftar_dakkan_standalone/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
